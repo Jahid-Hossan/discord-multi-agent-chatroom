@@ -1,0 +1,7 @@
+services:
+  ceo-bot:
+    build: .
+    container_name: discord-ceo-bot
+    restart: unless-stopped
+    env_file:
+      - .env
