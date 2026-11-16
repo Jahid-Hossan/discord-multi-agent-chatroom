@@ -70,7 +70,7 @@ client.on("messageCreate", async (message) => {
       .join("\n");
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3.8-flash",
       systemInstruction: CEO_SYSTEM_PROMPT,
     });
     const result = await model.generateContent(context);
