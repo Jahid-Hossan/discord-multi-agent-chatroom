@@ -34,6 +34,30 @@ function splitMessage(content, maxLength = 1950) {
   return chunks.length > 0 ? chunks : [""];
 }
 
+// Gemini sometimes fails with a temporary 503 (high demand) or a transient
+// 429/500. Retry those a few times with backoff instead of staying silent.
+// A "limit: 0" quota error (paid-only model on a free key) never fixes
+// itself by retrying, so it is not retried.
+async function generateWithRetry(model, context, attempts = 3) {
+  const delays = [5000, 15000];
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const result = await model.generateContent(context);
+      return result.response.text();
+    } catch (error) {
+      lastError = error;
+      const status = error && error.status;
+      const messageText = String((error && error.message) || "");
+      if (messageText.includes("limit: 0")) break;
+      const transient = status === 503 || status === 429 || status === 500 || !status;
+      if (!transient || attempt === attempts - 1) break;
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    }
+  }
+  throw lastError;
+}
+
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
@@ -73,14 +97,18 @@ client.on("messageCreate", async (message) => {
       model: "gemini-3.8-flash",
       systemInstruction: CEO_SYSTEM_PROMPT,
     });
-    const result = await model.generateContent(context);
-    const response = result.response.text();
+    const response = await generateWithRetry(model, context);
 
     for (const chunk of splitMessage(response)) {
       await message.channel.send(chunk);
     }
   } catch (error) {
     console.error("Failed to generate CEO response:", error);
+    try {
+      await message.channel.send("⚠️ Gemini সাময়িকভাবে সাড়া দিচ্ছে না — একটু পরে আবার জিজ্ঞেস করুন।");
+    } catch (sendError) {
+      console.error("Failed to send fallback notice:", sendError);
+    }
   }
 });
 
